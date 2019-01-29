@@ -1,0 +1,353 @@
+"""This was created for the purpose of a local discord to assist in directing
+    "raid trains" to specific gyms at specific times
+    Created by DB (Saint)
+    Maintained by Thunder.
+    Created for PoGo Bartlett
+"""
+
+# Import statements needed to create the bot and manage the database
+import MySQLdb
+import random
+from discord.ext.commands import Bot
+from discord import Game, Member, Channel
+
+
+# required prefixes for the bot, not susposed to be changed
+BOT_PREFIX = ("!", "?")
+# Token allows the bot to have access to the discord server
+TOKEN = ""
+# creates the bot and sends in the prefixes for the bot
+client = Bot(command_prefix=BOT_PREFIX)
+
+
+# on ready statement that states the bot is logged in and ready to go
+@client.event
+async def on_ready():
+    print("Logged in as")
+    print(client.user.name)
+    print(client.user.id)
+    print("-------------")
+    await client.change_presence(game=Game(name="Escape"))
+    client.close()
+
+
+# Major working fuction that gets the gym info from the DB that waits for a command and
+# accept the gym name and a start time for the raid
+@client.command(name="gym",
+                description="Gets gym info for the user.",
+                brief="Bartlett Gym Bot",
+                aliases=["Gym"],
+                pass_context=True)
+# sleep fucntion that waits for the command to get a specific
+# gym from the database.
+# this function takes one passive arguement and three required arguments
+# ctx is a passive argument that allows the bot to query the message sent
+# and gets the user and channel name
+# arg1 and arg2 are both "required" inputs for gym names
+# arg3 is a "required" that takes in a time for the raid to happen
+async def get_gym(ctx, *args):
+
+    user = ctx.message.author.mention
+    chan = ctx.message.channel.name
+    gym_name = args[0]
+    time = args[-1]
+    if ":" not in time:
+        await client.say("I require a time to work (i.e 12:00)")
+    else:
+        x = 1
+        while x < len(args) - 1:
+
+            gym_name += " " + args[x]
+            x += 1
+
+        gym_name = gym_name.lower()
+
+        gymTemp = get_by_name(gym_name)
+
+        if gymTemp is None:
+            await client.say("Your entry does not exist!")
+            await client.say("Please Try Aagain!")
+            await client.say("Please also check the spelling!")
+
+        else:
+
+            chann_result = channel_assignment(chan)
+
+            if chann_result == "fortunate":
+                emoji = get_emoji_fortunate(user)
+                chan_notify = "   @southwestraids"
+
+            elif chann_result == "punisher":
+                emoji = get_emoji_punisher()
+                chan_notify = "    @northwestraids"
+            elif chann_result == "northey":
+                emoji = get_emoji_northy(user)
+                chan_notify == "   @northwestraids"
+
+            elif chann_result == "west-raid":
+                emoji = ":jack_o_lantern:"
+                chan_notify = ""
+            else:
+                emoji = "cookie"
+                chan_notify = ""
+
+            await client.say(emoji + emoji + emoji + emoji + emoji + emoji)
+            await client.say(gym_name.title())
+            await client.say('https://www.google.com/maps/search/?api=1&query=' + str(gymTemp[0]) + "," + str(gymTemp[1]))
+            await client.say(emoji + emoji + emoji + emoji + emoji + emoji)
+            if chan_notify == "":
+                await client.say(time)
+            else:
+                await client.say(time + chan_notify)
+        client.close()
+
+
+# sleep function that waits for the command and searches the database
+# for gyms based on certian city input and returns it to the user
+
+
+@client.command(name='list',
+                brief='Gets a list of gyms in a city',
+                description='Asks the user for a city name and returns a list of gyms in that city',
+                aliases=['List', 'Gyms', 'gyms'])
+async def get_gym_list(*args):
+    city = args[0]
+    x = 1
+    while x < len(args):
+        city += " " + args[x]
+        x += 1
+
+    gym_list = get_gym_list(city.lower())
+
+    bool = True
+    if len(gym_list) == 0:
+        bool = False
+
+    if bool is False:
+        await client.say("That town is not covered by this discord!")
+        await client.say("Please Try Aagain!")
+        await client.say("Please also check the spelling!")
+    elif bool is True:
+        await client.say('The list of gyms in ' + city.title())
+        await client.say("-------------------------------------")
+        for i in gym_list:
+            await client.say(i[0].title())
+    client.close()
+
+
+# client command that will remove a gym by accepting the gym name.
+@client.command(name="remove",
+                aliases=["delete", "Delete", "Remove"],
+                pass_context=True)
+async def remove_gym(ctx, *args):
+    user = ctx.message.author.mention
+    bool = check_admin(user)
+
+    if bool is False:
+        await client.say("You do not have permission to do this.")
+    else:
+        gym_name = args[0]
+        x = 1
+        while x < len(args):
+            gym_name += " " + args[x]
+            x += 1
+
+        gym_name = gym_name.lower()
+
+        action = remove(gym_name)
+
+        await client.say(action + " " + gym_name.title())
+    client.close()
+
+
+@client.command(name="iv",
+                description="gets the raid boss mon IV",
+                alaises=["IV", "Iv"])
+async def gets_IV(mon=""):
+    if mon == "":
+        await client.say("You need to enter a Pokemon for me to do this.")
+
+    else:
+
+        mon = mon.lower()
+
+        result = get_mon(mon)
+
+        bool = True
+        if result is None:
+            bool = False
+        if bool is False:
+            await client.say("That pokemon is not a current raid boss.")
+
+        else:
+            mon = {'name': result[0].upper(), 'type': result[1].title(),
+                   'nonMin': str(result[2]), 'nonMax': str(result[3]), 'boostMin': str(result[4]),
+                   'boostMax': str(result[5]), 'counters': result[6].title()}
+
+            await client.say("      <" + mon['name'] + ">")
+            await client.say("Type:  " + mon['type'])
+            await client.say("---NonBooted IVs---")
+            await client.say("Min:  " + mon['nonMin'] + "   Max:  " + mon['nonMax'])
+            await client.say("---Boosted IVs---" +)
+            await client.say("Min:  " + mon['boostMin'] + "   Max:  " + mon['boostMax'])
+            await client.say("---Counters---")
+            await client.say(mon['counters'])
+
+    client.close()
+
+
+# gets the gym name from the database tables
+# connects to a local database and query's the DB and certian tables for info
+def get_by_name(gym):
+    try:
+        # instert "address", username, password, db name
+
+        conn = MySQLdb.connect(  # instert "address", username, password, db name)
+        c=conn.cursor()
+
+        c.execute("SELECT latitude, longitude FROM gym_bot.gyms WHERE gym = %s", {gym})
+        answer=c.fetchone()
+        return answer
+
+    except MYSQLdb.Error as e:
+        if conn:
+            conn.rollback()
+            e
+    finally:
+        if conn:
+            conn.close()
+
+
+# function that attempts to remove the gym from the database, return answer to
+# user if it fails or completes it
+def remove(gym):
+
+    try:
+        conn=MySQLdb.connect(  # instert "address", username, password, db name)
+        c=conn.cursor()
+        c.execute("DELETE FROM gym_bot.gyms WHERE gym = %s", {gym})
+        conn.commit()
+        return "Your action was completed."
+    except MySQLdb as e:
+        if conn:
+            conn.rollback()
+            return "Your action was not completed."
+    finally:
+        if conn:
+            conn.close()
+
+
+# gets the list of gyms based on which city they are in
+def get_gym_list(city):
+    try:
+        conn=MySQLdb.connect(  # instert "address", username, password, db name)
+        c=conn.cursor()
+
+        c.execute("SELECT gym FROM gym_bot.gyms WHERE city = %s", {city})
+        answer=c.fetchall()
+        return answer
+    finally:
+        if conn:
+            conn.close()
+
+
+# gets the min/max cp for the raid boss that is entered.
+def get_mon(mon):
+
+    conn=MySQLdb.connect(  # instert "address", username, password, db name)
+    c=conn.cursor()
+
+    c.execute("SELECT * From gym_bot.mons WHERE mon = %s", {mon})
+    answer=c.fetchone()
+    return answer
+    conn.close()
+
+
+# Gets the channel name for emoji check
+def channel_assignment(chan):
+    # list of current channels
+    channels={"fortunates-flock": "fortunate",
+                "punishers-playground": "punisher",
+                "northeytrain": "northey",
+                "general": "fortunate",
+                "test-raid": "punisher"}
+
+    return channels.get(chan, "nope")
+
+
+# checks users for fortunate flock channel for specific emoji's
+# users in order  saint, downze, Dance, panda, thunder, default is standard for channel
+def get_emoji_fortunate(user):
+
+    emojis={"<@322516507642953728>": ":rotating_light:",
+              "<@252674776697405440>": ":dunsparce:",
+              "<@282568292349247499>": ":dancer:",
+              "<@280216799151128576>": ":panda_face:",
+              "<@234055854134001674>": ":zap:"}
+
+    return emojis.get(user, ":pray:")
+
+
+# gets emote for punisher's raid channel
+def get_emoji_punisher():
+
+    random_emoji=[":rock:", ":Instinct:", ":electric:", ":mewtwo:"]
+    rand_num=random.randint(0, len(random_emoji)-1)
+
+    emoji_return=random_emoji[rand_num]
+
+    return emoji_return
+
+
+# function that allows the certian emoji's to be used for each user
+# in the northy raid train lounge
+def get_emoji_northy(user):
+
+    emojis={"<@342781510761447434>": ":steam_locomotive:",
+              "<@269890520984190976>": ":hammer_pick:",
+              "<@269890520984190976>": ":mystic:",
+              "<@339582630267715586>": ":money_with_wings:",
+              "<@341625243674345474>": "instinct"}
+
+    return emojis.get(user, ":steam_locomotive:")
+
+
+# will check to see if user is an admin or mod for adding and removing data
+# order: Thunder, Borbapedia, Spiralout154, Smoke, Bunnies, Saint
+def check_admin(admin):
+    admins={"<@234055854134001674>": True,
+              "<@234346482507972609>": True,
+              "<@234346482507972609>": True,
+              "<@282615575862050816>": True,
+              "<@281903892239745036>": True,
+              "<@322516507642953728>": True}
+
+    return admins.get(admin, False)
+
+
+@client.command(name="logoff",
+                description="Logs off the bot and terminates use",
+                aliases=["logout", "bye"],
+                pass_context=True)
+async def log_off(ctx):
+    user=ctx.message.author.mention
+
+    if user == "<@234055854134001674>" or user == "<@322516507642953728>":
+        await client.say('I was caught, back to the cage for me. :cry:')
+        await client.logout()
+    else:
+        await client.say('You do not have permission to put me back in the cage!' +
+                         client.user.name + ' is still trying to escape!')
+
+
+@client.command(name='creator',
+                pass_context=True)
+async def creator(ctx):
+    user=ctx.message.author.mention
+    if user == "<@322516507642953728>" or user == "<@234055854134001674>":
+        await client.say("The creator of this is @Saint4124 and @Thunder0664 from Bartlett PoGo.")
+    else:
+        await client.say("You do not have permission to access this!")
+
+
+client.run(TOKEN)
